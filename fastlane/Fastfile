@@ -150,7 +150,7 @@ platform :android do
      tag_msg=get_gradle_property(property:"GIT_TAG_MSG")
      date = sh "date +%Y%m%d"
      puts "v#{version}-build-#{date}"
-     add_git_tag(tag: version, message: "#{tag_msg}") # 设置 tag
+     add_git_tag(tag: "v#{version}-build-#{date}", message: "#{tag_msg}") # 设置 tag
      # 推到远程仓库
      push_to_git_remote # 推送到 git 仓库
   end
