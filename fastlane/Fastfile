@@ -1,0 +1,191 @@
+# Customize this file, documentation can be found here:
+# https://docs.fastlane.tools/actions/
+# All available actions: https://docs.fastlane.tools/actions
+# can also be listed using the `fastlane actions` command
+
+# Change the syntax highlighting to Ruby
+# All lines starting with a # are ignored when running `fastlane`
+
+# If you want to automatically update fastlane if a new version is available:
+# update_fastlane
+
+# This is the minimum version number required.
+# Update this, if you use features of a newer version
+min_fastlane_version("2.71.1")
+require "java-properties"
+default_platform(:android)
+# chomp 去掉字符串末尾的\n或\r
+ENV["JG_ANDROID_SDK_DIR"] = %x( echo $ANDROID_HOME ).chomp
+
+platform :android do
+  before_all do
+    # ENV["SLACK_URL"] = "https://hooks.slack.com/services/..."
+    # 跳过文档
+    skip_docs
+  end
+
+  desc "test upload to cdn"
+  lane :testupload do |options|
+    video_call_version_string = "1.2.6"
+    realPath= Pathname.new(File.dirname(__FILE__)).realpath
+     upload_sdk_to_cdn(
+           version:video_call_version_string,
+           file_path:"#{realPath}/deploy/Wilddog_Video_Call_Android_#{video_call_version_string}_All.zip",
+            url:"http://upload.ops.wilddog.cn/android/"
+           )
+  end
+
+  desc "Update versions do"
+  lane :update_version do |options|
+      version = options[:version]
+      update_java_version(version:version)
+      #update_gradle_version(version:version)
+    end
+
+  desc "Update versions do"
+  lane :testinput do |options|
+     if UI.interactive?
+      is_correct=false
+      while !is_correct do
+         name = UI.input "请输入 tag 描述信息: "
+         is_correct=UI.confirm "是否确认描述信息为：#{name} "
+       end
+       UI.message "#{name}."
+     end
+    end
+
+
+  desc "将 sdk 拷贝到当前路径下然后压缩"
+  lane :copy_file do |options|
+  base_version_string=options[:base_version]
+  video_call_version_string=options[:video_call_version]
+
+    base_sdk_src = "/home/$USER/.m2/repository/com/wilddog/client/wilddog-video-base-android/#{base_version_string}/wilddog-video-base-android-#{base_version_string}.aar"
+    video_call_sdk_src = "/home/$USER/.m2/repository/com/wilddog/client/wilddog-video-call-android/#{video_call_version_string}/wilddog-video-call-android-#{video_call_version_string}.aar"
+    realPath= Pathname.new(File.dirname(__FILE__)).realpath
+    dest = "/deploy/Wilddog_Video_Call_Android_#{video_call_version_string}_All"
+    puts base_sdk_src
+    puts video_call_sdk_src
+    puts dest
+    sh " mkdir -p #{realPath}#{dest}"
+    sh "cp -R #{base_sdk_src} #{realPath}#{dest}/wilddog-video-base-android-#{base_version_string}.aar"
+    sh "cp -R #{video_call_sdk_src} #{realPath}#{dest}/wilddog-video-call-android-#{video_call_version_string}.aar"
+    zip(path: "#{realPath}/deploy/Wilddog_Video_Call_Android_#{video_call_version_string}_All",
+          output_path: "#{realPath}/deploy/Wilddog_Video_Call_Android_#{video_call_version_string}_All.zip")
+  end
+
+  desc "上传到 cdn"
+  lane :upload_cdn do |options|
+    video_call_version_string=options[:video_call_version]
+    realPath= Pathname.new(File.dirname(__FILE__)).realpath
+
+    upload_sdk_to_cdn(
+    version:video_call_version_string,
+    file_path:"#{realPath}/deploy/Wilddog_Video_Call_Android_#{video_call_version_string}_All.zip",
+     url:"http://upload.ops.wilddog.cn/android/"
+    )
+
+  end
+
+  desc "更新 wilddog 官网版本号"
+  lane :update_official_website do |options|
+    video_call_version_string=options[:video_call_version]
+    realPath= Pathname.new(File.dirname(__FILE__)).realpath
+     appid =get_gradle_property(property:"APPID")
+     email = get_gradle_property(property:"EMAIL")
+     password = get_gradle_property(property:"PASSWORD")
+     project_name =get_gradle_property(property:"PROJECT_NAME")
+    update_official_website(
+                version: video_call_version_string,
+                project: "Wilddog_Video_Call_Android_#{video_call_version_string}_All", # Wilddog_Video_Call/Room_Android_#{video_call_version_string}_All
+                website_appid: appid,
+                website_email: email,
+                website_password: password,
+                website_project_name: project_name,
+                file_path: "#{realPath}/deploy/Wilddog_Video_Call_Android_#{video_call_version_string}_All.zip",
+                print_rather_than_invoke: false
+              )
+
+  end
+
+  desc "上传到本地 Maven"
+  lane :publish_to_maven_local do |options|
+   # 执行 clean 和 build 命令 上传到本地
+     gradle(task:"clean")
+     gradle(task:"build")
+     # gradle(task:"publishToMavenLocal")
+
+  end
+
+  desc "上传到中央仓库"
+  lane :publish_to_maven_remote do |options|
+      gradle(task:"uploadArchives")
+  end
+
+  desc "提交"
+  lane :commit_to_git do |options|
+     version = options[:version]
+     # 提交
+     git_commit_all(message: "Update version to #{version}") # 提交版本号修改
+     # 推到分之
+     push_to_git_remote( remote: "origin",
+                          local_branch: "stage-v#{version}",
+                          remote_branch: "stage-v#{version}",
+                          force: true,
+                          tags: false )
+     # 切换到主分支
+     git_checkout(branch:"master")
+     # 合并分之
+     git_merge(branch:"stage-v#{version}")
+     # 打tag
+     if UI.interactive?
+        is_correct=false
+        while !is_correct do
+           tag_notes = UI.input "请输入 tag 描述（如： 修复goOnline和gOffline失效问题）: "
+           is_correct=UI.confirm "描述信息为：#{tag_notes} "
+        end
+        UI.message "#{tag_notes}"
+     end
+     add_git_tag(tag: version, message: "#{tag_notes}") # 设置 tag
+     # 推到远程仓库
+     push_to_git_remote # 推送到 git 仓库
+  end
+
+# 命令实例 fastlane release
+  desc "release"
+  lane :release do |options|
+     # base_version_string = "2.3.4"
+      #video_call_version_string = "2.5.6"
+        base_version_string =get_gradle_property(property:"VIDEO_BASE_SDK_VERSION")
+        video_call_version_string =get_gradle_property(property:"POM_VERSION")
+     sh("fastlane update_version version:#{video_call_version_string}")
+    # sh("fastlane publish_to_maven_local version:#{video_call_version_string}")
+    #  sh("fastlane publish_to_maven_remote")
+     sh("fastlane commit_to_git version:#{video_call_version_string}")
+      sh("fastlane copy_file base_version:#{base_version_string} video_call_version:#{video_call_version_string}")
+     # sh("fastlane upload_cdn video_call_version:#{video_call_version_string}")
+     sh("fastlane update_official_website video_call_version:#{video_call_version_string}")
+
+  end
+
+  after_all do |lane|
+    # This block is called, only if the executed lane was successful
+
+    # slack(
+    #   message: "Successfully deployed new App Update."
+    # )
+  end
+
+  error do |lane, exception|
+    # slack(
+    #   message: exception.message,
+    #   success: false
+    # )
+  end
+end
+
+# More information about multiple platforms in fastlane: https://docs.fastlane.tools/advanced/#control-configuration-by-lane-and-by-platform
+# All available actions: https://docs.fastlane.tools/actions
+
+# fastlane reports which actions are used. No personal data is recorded.
+# Learn more at https://docs.fastlane.tools/#metrics
