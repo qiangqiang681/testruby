@@ -139,16 +139,18 @@ platform :android do
      git_merge(branch:"stage-v#{version}")
      # 打tag
      #if UI.interactive?
-        is_correct=false
-        puts "11111111111111111111111"
-        while !is_correct do
-           tag_notes = UI.input "请输入 tag 描述（如： 修复goOnline和gOffline失效问题）: "
-           is_correct=UI.confirm "描述信息为：#{tag_notes} "
-        end
-        UI.message "#{tag_notes}"
+     #  is_correct=false
+     #  puts "11111111111111111111111"
+     #  while !is_correct do
+     #     tag_notes = UI.input "请输入 tag 描述（如： 修复goOnline和gOffline失效问题）: "
+     #     is_correct=UI.confirm "描述信息为：#{tag_notes} "
+     #  end
+     #  UI.message "#{tag_notes}"
      #end
      tag_msg=get_gradle_property(property:"GIT_TAG_MSG")
-     add_git_tag(tag: version, message: "#{tag_msg}") # 设置 tag
+     date=sh "date +%Y%m%d"
+     puts "v#{version}-build-#{date}"
+     add_git_tag(tag: "v#{version}-build-#{date}", message: "#{tag_msg}") # 设置 tag
      # 推到远程仓库
      push_to_git_remote # 推送到 git 仓库
   end
